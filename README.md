@@ -1,0 +1,159 @@
+AI Voice Transcriber - Full Setup Guide
+This guide provides step-by-step instructions to set up and run the AI Voice Transcriber application.
+
+Table of Contents
+Introduction
+
+Features
+
+Prerequisites
+
+Setup Instructions
+
+Step 1: Create a Firebase Project
+
+Step 2: Enable Firebase Services
+
+Step 3: Get Your Gemini API Key
+
+Step 4: Running the Application
+
+Troubleshooting
+
+Introduction
+The AI Voice Transcriber is a web application that records your voice, transcribes it to text in real-time, and provides additional AI-powered tools to summarize and analyze the text. It saves your recordings for the current session and includes an audio visualizer for a dynamic user experience.
+
+Features
+Real-time Voice Transcription: Converts spoken words to text instantly.
+
+AI-Powered Summarization: Uses the Gemini API to summarize text and extract key bullet points.
+
+Audio Visualizer: Provides visual feedback while recording.
+
+Session History: Stores recordings with audio playback for your current session.
+
+Download & Share: Allows you to download the transcription as a .txt file or share it using your device's native sharing options.
+
+Secure Configuration: All settings, including API keys, are stored locally in your browser.
+
+Prerequisites
+A Google Account.
+
+A modern web browser like Google Chrome, Firefox, or Edge.
+
+Setup Instructions
+Step 1: Create a Firebase Project
+First, you need a Firebase project to handle user authentication and store settings.
+
+Go to the Firebase Console: https://console.firebase.google.com/
+
+Add a new project: Click on "Add project", give it a name (e.g., "AI-Voice-App"), and follow the on-screen instructions. You can disable Google Analytics for this project if you wish.
+
+Create a Web App:
+
+Once your project is ready, you will be on the Project Overview page.
+
+Click the web icon (</>) to register a new web app.
+
+Give your app a nickname (e.g., "Transcriber Web") and click "Register app".
+
+Firebase will show you a firebaseConfig object. You don't need to copy it now; we will retrieve it later. Click "Continue to console".
+
+Step 2: Enable Firebase Services
+You need to enable two core Firebase services: Authentication and Firestore.
+
+Enable Authentication:
+
+In the left-hand menu, under the "Build" section, click Authentication.
+
+Click the "Get started" button.
+
+On the next screen, click the "Sign-in method" tab.
+
+From the list of providers, select "Anonymous".
+
+Enable the toggle switch and click "Save". This is crucial for the app to work without requiring a user login.
+
+Enable Firestore Database:
+
+In the left-hand menu, under the "Build" section, click Firestore Database.
+
+Click the "Create database" button.
+
+Select "Start in production mode" and click "Next".
+
+Choose a Firestore location (the default is usually fine) and click "Enable".
+
+Configure Firestore Security Rules:
+
+After the database is created, go to the "Rules" tab.
+
+Replace the default rule with the following code. This allows authenticated users to access their own data.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{documents=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+
+Click "Publish" to save the new rules.
+
+Step 3: Get Your Gemini API Key
+To use the AI summarization feature, you need an API key from Google AI Studio.
+
+Go to Google AI Studio: https://aistudio.google.com/
+
+Create API Key:
+
+Log in with your Google account.
+
+Click on "Get API key" from the left-hand menu.
+
+Click "Create API key in new project".
+
+A new key will be generated for you. Copy this key and save it somewhere safe temporarily.
+
+Step 4: Running the Application
+Now you have everything you need to configure and run the app.
+
+Get Firebase Config Details:
+
+Go back to your Firebase project.
+
+Click the gear icon (⚙️) in the top-left corner and select "Project settings".
+
+In the "General" tab, scroll down to the "Your apps" section.
+
+You will see the firebaseConfig object. Keep this page open.
+
+Open the App:
+
+Save the application's HTML code as index.html.
+
+Open the index.html file in your web browser.
+
+Configure the App's Settings:
+
+In the app, click the settings icon (⚙️) in the top-right corner.
+
+The settings panel will slide out. It will be pre-filled with default values.
+
+Carefully copy the values from your Firebase project's firebaseConfig object into the corresponding fields in the app's settings panel.
+
+In the "Gemini API Key" field, paste the key you generated from Google AI Studio.
+
+Click "Save Settings & Reload". The page will automatically reload with your new configuration.
+
+The application is now fully set up and ready to use!
+
+Troubleshooting
+"User ID: Auth Failed": This means you have not enabled "Anonymous" as a sign-in method in your Firebase project's Authentication settings. See Step 2.
+
+"Please configure and save Firebase settings first": This means the app could not initialize Firebase. Double-check that all the values in the settings panel exactly match your firebaseConfig object from the Firebase console.
+
+"Microphone access was denied": You need to grant the web page permission to use your microphone. If you accidentally clicked "Block", you may need to go into your browser's site settings to change this permission for the page.
+
+AI Summary Fails: This usually means the Gemini API Key is incorrect or has not been saved properly. Re-check the key in the settings panel.
