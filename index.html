@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice-to-Text Transcriber</title>
+    <title>AI Voice-to-Text Transcriber</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -21,8 +21,22 @@
             70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
-        #settings-panel {
+        #settings-panel, #history-panel {
             transition: transform 0.3s ease-in-out;
+        }
+        #visualizer {
+            height: 80px;
+            width: 100%;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 2px;
+            margin-top: 1rem;
+        }
+        .visualizer-bar {
+            width: 4px;
+            background-color: #4f46e5;
+            transition: height 0.1s ease-out;
         }
     </style>
 </head>
@@ -31,28 +45,44 @@
     <div class="w-full max-w-2xl mx-auto p-4 md:p-6">
         <!-- Header -->
         <header class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-gray-200">Voice Transcriber</h1>
-            <button id="settings-btn" class="text-gray-400 hover:text-white transition-colors">
-                <i class="fas fa-cog fa-lg"></i>
-            </button>
+            <div>
+                 <h1 class="text-2xl font-bold text-gray-200">AI Voice Transcriber</h1>
+            </div>
+            <div>
+                <button id="history-btn" class="text-gray-400 hover:text-white transition-colors mr-4">
+                    <i class="fas fa-history fa-lg"></i>
+                </button>
+                <button id="settings-btn" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-cog fa-lg"></i>
+                </button>
+            </div>
         </header>
 
         <!-- Main Content -->
         <main class="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 md:p-8 shadow-2xl border border-gray-700/50">
             <!-- Transcription Display -->
-            <div id="transcription-container" class="mb-8 min-h-[150px] bg-gray-900/70 rounded-xl p-4 text-gray-300 whitespace-pre-wrap leading-relaxed">
+            <div id="transcription-container" class="mb-4 min-h-[150px] bg-gray-900/70 rounded-xl p-4 text-gray-300 whitespace-pre-wrap leading-relaxed overflow-y-auto">
                 <p id="transcription-output">Press the button below and start speaking...</p>
                 <p id="interim-output" class="text-gray-500"></p>
             </div>
+            
+            <!-- Visualizer -->
+            <div id="visualizer-container" class="hidden">
+                <canvas id="visualizer" class="w-full h-20 rounded-lg bg-gray-900/50"></canvas>
+            </div>
 
             <!-- Controls -->
-            <div class="flex flex-col items-center justify-center space-y-6">
+            <div class="flex flex-col items-center justify-center space-y-6 mt-4">
                 <button id="record-btn" class="w-40 h-40 rounded-full flex flex-col items-center justify-center text-white font-semibold text-lg transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-4 focus:ring-opacity-50 bg-blue-600 hover:bg-blue-700 focus:ring-blue-500">
                     <i id="record-icon" class="fas fa-microphone text-4xl mb-2"></i>
                     <span id="record-text">Press to Speak</span>
                 </button>
 
-                <div id="action-buttons" class="hidden flex items-center space-x-4">
+                <div id="action-buttons" class="hidden flex flex-wrap items-center justify-center gap-4">
+                    <button id="summarize-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                        <span>Summarize with AI</span>
+                    </button>
                     <button id="download-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors">
                         <i class="fas fa-download"></i>
                         <span>Download</span>
@@ -80,10 +110,17 @@
             </button>
         </div>
         <div class="space-y-6">
-            <!-- Firebase Settings Section -->
+            <div>
+                <label for="gemini-api-key" class="block text-sm font-medium text-gray-400 mb-1">Gemini API Key</label>
+                 <div class="flex items-center">
+                    <input type="password" id="gemini-api-key" class="flex-grow w-full bg-gray-700 border border-gray-600 rounded-l-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter your Gemini API key">
+                    <button class="toggle-vis-btn bg-gray-600 hover:bg-gray-500 text-white font-bold p-2 rounded-r-lg" style="height: 42px; width: 42px;">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
+            </div>
             <div id="firebase-settings-container">
                 <h3 class="text-lg font-semibold text-gray-300 border-b border-gray-600 pb-2 mb-4">Firebase Configuration</h3>
-                <!-- Fields will be dynamically inserted here -->
             </div>
         </div>
         <button id="save-settings-btn" class="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
@@ -91,6 +128,19 @@
         </button>
     </div>
     
+    <!-- History Panel -->
+    <div id="history-panel" class="fixed top-0 left-0 h-full w-full md:w-96 bg-gray-800 shadow-2xl p-6 transform -translate-x-full z-50 border-r-2 border-gray-700 overflow-y-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-2xl font-bold">Session History</h2>
+            <button id="close-history-btn" class="text-gray-400 hover:text-white">
+                <i class="fas fa-times fa-lg"></i>
+            </button>
+        </div>
+        <div id="history-list" class="space-y-4">
+            <p class="text-gray-400">No recordings in this session yet.</p>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg opacity-0 transition-opacity duration-300">
         Settings Saved!
@@ -109,6 +159,11 @@
         let recognition;
         let final_transcript = '';
         let firebaseInitialized = false;
+        let mediaRecorder;
+        let audioChunks = [];
+        let sessionHistory = [];
+        let audioContext, analyser, visualizerCanvas, visualizerCtx, dataArray, animationFrameId;
+        let geminiApiKey = '';
 
         // --- UI Elements ---
         const recordBtn = document.getElementById('record-btn');
@@ -119,13 +174,21 @@
         const actionButtons = document.getElementById('action-buttons');
         const downloadBtn = document.getElementById('download-btn');
         const shareBtn = document.getElementById('share-btn');
+        const summarizeBtn = document.getElementById('summarize-btn');
         const settingsBtn = document.getElementById('settings-btn');
         const closeSettingsBtn = document.getElementById('close-settings-btn');
         const settingsPanel = document.getElementById('settings-panel');
         const saveSettingsBtn = document.getElementById('save-settings-btn');
         const firebaseSettingsContainer = document.getElementById('firebase-settings-container');
+        const geminiApiKeyInput = document.getElementById('gemini-api-key');
+        const historyBtn = document.getElementById('history-btn');
+        const closeHistoryBtn = document.getElementById('close-history-btn');
+        const historyPanel = document.getElementById('history-panel');
+        const historyList = document.getElementById('history-list');
         const toast = document.getElementById('toast');
         const userIdDisplay = document.getElementById('user-id-display');
+        const visualizerContainer = document.getElementById('visualizer-container');
+        visualizerCanvas = document.getElementById('visualizer');
 
         // --- Default Firebase Config ---
         const defaultFirebaseConfig = {
@@ -150,50 +213,34 @@
             
             recognition.onresult = (event) => {
                 let interim_transcript = '';
-                final_transcript = ''; 
-                for (let i = 0; i < event.results.length; ++i) {
+                let current_final = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
-                        final_transcript += event.results[i][0].transcript;
+                        current_final += event.results[i][0].transcript;
                     } else {
                         interim_transcript += event.results[i][0].transcript;
                     }
                 }
+                final_transcript += current_final;
                 transcriptionOutput.textContent = final_transcript;
                 interimOutput.textContent = interim_transcript;
             };
 
             recognition.onend = () => {
                 console.log('Voice recognition ended.');
-                if (!isRecording) return; // If already stopped by an error, do nothing.
-                isRecording = false;
-
-                const hasError = transcriptionOutput.querySelector('b');
-                if (!hasError) {
-                     if (final_transcript.trim()) {
-                        actionButtons.classList.remove('hidden');
-                    } else {
-                        transcriptionOutput.textContent = 'Could not hear anything. Please try again.';
-                    }
-                }
-                resetRecordButtonUI();
+                finalizeRecording();
             };
 
             recognition.onerror = (event) => {
                 console.error('Speech recognition error:', event.error);
                 if (event.error === 'language-not-supported') {
-                    transcriptionOutput.innerHTML = `<b>Error:</b> Your browser's speech recognition does not support the default language. You may need to install a language pack for your OS.`;
+                    transcriptionOutput.innerHTML = `<b>Error:</b> Your browser's speech recognition does not support the default language.`;
                 } else if (event.error === 'not-allowed') {
                     transcriptionOutput.innerHTML = `<b>Error:</b> Microphone access was denied. Please allow microphone access in your browser settings and reload the page.`;
-                }
-                else {
+                } else {
                      transcriptionOutput.innerHTML = `<b>An error occurred:</b> ${event.error}`;
                 }
-                
-                if (isRecording) {
-                    recognition.stop();
-                }
-                isRecording = false;
-                resetRecordButtonUI();
+                finalizeRecording(true);
             };
         } else {
             console.error("Speech Recognition not supported in this browser.");
@@ -206,27 +253,15 @@
         settingsBtn.addEventListener('click', openSettings);
         closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.add('translate-x-full'));
         saveSettingsBtn.addEventListener('click', saveSettings);
+        historyBtn.addEventListener('click', () => historyPanel.classList.remove('-translate-x-full'));
+        closeHistoryBtn.addEventListener('click', () => historyPanel.classList.add('-translate-x-full'));
         downloadBtn.addEventListener('click', downloadTranscription);
         shareBtn.addEventListener('click', shareTranscription);
-        firebaseSettingsContainer.addEventListener('click', (e) => {
-            if (e.target.closest('.toggle-vis-btn')) {
-                const button = e.target.closest('.toggle-vis-btn');
-                const input = button.previousElementSibling;
-                const icon = button.querySelector('i');
-                if (input.type === 'password') {
-                    input.type = 'text';
-                    icon.classList.remove('fa-eye');
-                    icon.classList.add('fa-eye-slash');
-                } else {
-                    input.type = 'password';
-                    icon.classList.remove('fa-eye-slash');
-                    icon.classList.add('fa-eye');
-                }
-            }
-        });
+        summarizeBtn.addEventListener('click', summarizeText);
+        settingsPanel.addEventListener('click', handleSettingsInputToggle);
 
         // --- Functions ---
-        function toggleRecording() {
+        async function toggleRecording() {
             if (!firebaseInitialized) {
                 showToast("Please configure and save Firebase settings first.", true);
                 return;
@@ -235,40 +270,79 @@
                 showToast("Speech recognition not supported in this browser.", true);
                 return;
             }
-
             if (isRecording) {
                 recognition.stop();
             } else {
-                startRecording();
+                await startRecording();
             }
         }
 
-        function startRecording() {
+        async function startRecording() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                transcriptionOutput.innerHTML = `<b>Error:</b> Your browser does not support microphone access.`;
+                return;
+            }
             isRecording = true;
             final_transcript = '';
+            audioChunks = [];
             actionButtons.classList.add('hidden');
             transcriptionOutput.textContent = 'Listening...';
             interimOutput.textContent = '';
             
             try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                setupVisualizer(stream);
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    if(final_transcript.trim()) {
+                        addToHistory(final_transcript, audioUrl);
+                    }
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
                 recognition.start();
-                recordBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'focus:ring-blue-500');
-                recordBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500', 'pulse');
-                recordIcon.classList.remove('fa-microphone');
-                recordIcon.classList.add('fa-stop');
+                
+                recordBtn.classList.replace('bg-blue-600', 'bg-red-600');
+                recordBtn.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
+                recordBtn.classList.add('pulse');
+                recordIcon.classList.replace('fa-microphone', 'fa-stop');
                 recordText.textContent = 'Press to Finish';
+
             } catch (e) {
                 console.error("Error starting recognition:", e);
-                transcriptionOutput.innerHTML = `<b>Error:</b> Could not start voice recognition. It might already be running.`;
+                transcriptionOutput.innerHTML = `<b>Error:</b> Could not start voice recognition. Please ensure microphone permissions are granted.`;
                 isRecording = false;
             }
         }
+
+        function finalizeRecording(hasError = false) {
+            if (!isRecording) return;
+            isRecording = false;
+
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+            }
+            stopVisualizer();
+            
+            if (!hasError) {
+                if (final_transcript.trim()) {
+                    actionButtons.classList.remove('hidden');
+                } else {
+                    transcriptionOutput.textContent = 'Could not hear anything. Please try again.';
+                }
+            }
+            resetRecordButtonUI();
+        }
         
         function resetRecordButtonUI() {
-            recordBtn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'focus:ring-blue-500');
-            recordBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500', 'pulse');
-            recordIcon.classList.add('fa-microphone');
-            recordIcon.classList.remove('fa-stop');
+            recordBtn.classList.replace('bg-red-600', 'bg-blue-600');
+            recordBtn.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
+            recordBtn.classList.remove('pulse');
+            recordIcon.classList.replace('fa-stop', 'fa-microphone');
             recordText.textContent = 'Press to Speak';
         }
 
@@ -290,12 +364,49 @@
             if (navigator.share) {
                 try {
                     await navigator.share({ title: 'My Transcription', text: final_transcript });
-                    console.log('Shared successfully');
                 } catch (error) {
                     console.error('Error sharing:', error);
                 }
             } else {
                 navigator.clipboard.writeText(final_transcript).then(() => showToast('Copied to clipboard!'));
+            }
+        }
+
+        async function summarizeText() {
+            const apiKey = geminiApiKey;
+            if (!apiKey) {
+                showToast("Please enter your Gemini API key in settings.", true);
+                return;
+            }
+            
+            summarizeBtn.disabled = true;
+            summarizeBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Summarizing...`;
+
+            const prompt = `Summarize the following text and extract key information as bullet points:\n\n---\n\n${final_transcript}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error.message || `API request failed with status ${response.status}`);
+                }
+
+                const result = await response.json();
+                const summary = result.candidates[0].content.parts[0].text;
+                transcriptionOutput.innerHTML = `<b>Original Text:</b><br>${final_transcript}<br><br><b>AI Summary:</b><br>${summary.replace(/\n/g, '<br>')}`;
+
+            } catch (error) {
+                console.error("Gemini API error:", error);
+                showToast(`AI Summary Failed: ${error.message}`, true);
+            } finally {
+                summarizeBtn.disabled = false;
+                summarizeBtn.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i> Summarize with AI`;
             }
         }
 
@@ -305,9 +416,63 @@
             toast.classList.remove('opacity-0');
             setTimeout(() => toast.classList.add('opacity-0'), 3000);
         }
+        
+        // --- History Functions ---
+        function addToHistory(text, audioUrl) {
+            const id = `history-${Date.now()}`;
+            sessionHistory.unshift({ id, text, audioUrl });
+            renderHistory();
+        }
+
+        function renderHistory() {
+            if (sessionHistory.length === 0) {
+                historyList.innerHTML = `<p class="text-gray-400">No recordings in this session yet.</p>`;
+                return;
+            }
+            historyList.innerHTML = sessionHistory.map(item => `
+                <div class="bg-gray-700/50 p-3 rounded-lg cursor-pointer hover:bg-gray-600/50" data-id="${item.id}">
+                    <p class="truncate text-gray-300">${item.text}</p>
+                    <audio controls src="${item.audioUrl}" class="w-full mt-2"></audio>
+                </div>
+            `).join('');
+        }
+
+        // --- Visualizer Functions ---
+        function setupVisualizer(stream) {
+            visualizerContainer.classList.remove('hidden');
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+            analyser.fftSize = 256;
+            const bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            visualizerCtx = visualizerCanvas.getContext('2d');
+            drawVisualizer();
+        }
+
+        function drawVisualizer() {
+            animationFrameId = requestAnimationFrame(drawVisualizer);
+            analyser.getByteFrequencyData(dataArray);
+            visualizerCtx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+            const barWidth = (visualizerCanvas.width / dataArray.length) * 2.5;
+            let x = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                const barHeight = dataArray[i] / 2;
+                visualizerCtx.fillStyle = `rgba(79, 70, 229, ${barHeight / 150})`;
+                visualizerCtx.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+                x += barWidth + 1;
+            }
+        }
+
+        function stopVisualizer() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            if (visualizerCtx) visualizerCtx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+            visualizerContainer.classList.add('hidden');
+            if(audioContext && audioContext.state !== 'closed') audioContext.close();
+        }
 
         // --- Settings & Firebase Functions ---
-
         function buildSettingsUI(config) {
             firebaseSettingsContainer.innerHTML = '<h3 class="text-lg font-semibold text-gray-300 border-b border-gray-600 pb-2 mb-4">Firebase Configuration</h3>';
             firebaseConfigKeys.forEach(key => {
@@ -330,6 +495,7 @@
         function openSettings() {
             const config = getFirebaseConfigFromStorage();
             buildSettingsUI(config);
+            geminiApiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
             settingsPanel.classList.remove('translate-x-full');
         }
 
@@ -349,12 +515,14 @@
                 showToast("All Firebase config fields are required.", true);
                 return;
             }
-
+            
+            const newGeminiKey = geminiApiKeyInput.value;
             localStorage.setItem('firebaseConfig', JSON.stringify(newConfig));
+            localStorage.setItem('geminiApiKey', newGeminiKey);
+            geminiApiKey = newGeminiKey;
+
             showToast("Settings Saved! Reloading...");
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
+            setTimeout(() => window.location.reload(), 1500);
         }
 
         function getFirebaseConfigFromStorage() {
@@ -363,17 +531,31 @@
                 try {
                     return JSON.parse(storedConfig);
                 } catch (e) {
-                    console.error("Error parsing stored config, falling back to default.", e);
                     return defaultFirebaseConfig;
                 }
             }
             return defaultFirebaseConfig;
         }
         
+        function handleSettingsInputToggle(e) {
+            if (e.target.closest('.toggle-vis-btn')) {
+                const button = e.target.closest('.toggle-vis-btn');
+                const input = button.previousElementSibling;
+                const icon = button.querySelector('i');
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.classList.replace('fa-eye', 'fa-eye-slash');
+                } else {
+                    input.type = 'password';
+                    icon.classList.replace('fa-eye-slash', 'fa-eye');
+                }
+            }
+        }
+        
         // --- Initialization ---
         async function initialize() {
+            geminiApiKey = localStorage.getItem('geminiApiKey') || '';
             const firebaseConfig = getFirebaseConfigFromStorage();
-
             if (!localStorage.getItem('firebaseConfig')) {
                  localStorage.setItem('firebaseConfig', JSON.stringify(firebaseConfig, null, 2));
             }
@@ -387,11 +569,9 @@
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         userId = user.uid;
-                        console.log("User is signed in with UID:", userId);
                         userIdDisplay.textContent = userId;
                         firebaseInitialized = true;
                     } else {
-                        console.log("User is not signed in. Attempting anonymous authentication...");
                         try {
                             await signInAnonymously(auth);
                         } catch (error) {
@@ -408,7 +588,7 @@
                 });
             } catch (error) {
                 console.error("Full Firebase initialization error:", error);
-                transcriptionOutput.innerHTML = `Error initializing Firebase. Please check your configuration in <i class="fas fa-cog"></i> settings. The error was: <span class="text-red-400">${error.message}</span>`;
+                transcriptionOutput.innerHTML = `Error initializing Firebase. Check your configuration in <i class="fas fa-cog"></i> settings. The error was: <span class="text-red-400">${error.message}</span>`;
                 userIdDisplay.textContent = "Init Error";
                 firebaseInitialized = false;
             }
