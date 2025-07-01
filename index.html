@@ -38,6 +38,13 @@
             background-color: #4f46e5;
             transition: height 0.1s ease-out;
         }
+        [contenteditable="true"] {
+            outline: 2px solid transparent;
+            outline-offset: 2px;
+        }
+        [contenteditable="true"]:focus {
+            outline-color: #4f46e5;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white flex items-center justify-center min-h-screen overflow-hidden">
@@ -61,9 +68,10 @@
         <!-- Main Content -->
         <main class="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 md:p-8 shadow-2xl border border-gray-700/50">
             <!-- Transcription Display -->
-            <div id="transcription-container" class="mb-4 min-h-[150px] bg-gray-900/70 rounded-xl p-4 text-gray-300 whitespace-pre-wrap leading-relaxed overflow-y-auto">
-                <p id="transcription-output">Press the button below and start speaking...</p>
+            <div id="transcription-container" class="mb-4 bg-gray-900/70 rounded-xl p-4 text-gray-300 leading-relaxed overflow-y-auto">
+                <div id="transcription-output" class="min-h-[150px] whitespace-pre-wrap" contenteditable="false" spellcheck="true">Press the button below and start speaking...</div>
                 <p id="interim-output" class="text-gray-500"></p>
+                <div id="ai-summary-block" class="hidden mt-4 pt-4 border-t border-gray-700"></div>
             </div>
             
             <!-- Visualizer -->
@@ -79,6 +87,10 @@
                 </button>
 
                 <div id="action-buttons" class="hidden flex flex-wrap items-center justify-center gap-4">
+                    <button id="save-edits-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors">
+                        <i class="fas fa-save"></i>
+                        <span>Save Edits</span>
+                    </button>
                     <button id="summarize-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors">
                         <i class="fas fa-wand-magic-sparkles"></i>
                         <span>Summarize with AI</span>
@@ -162,6 +174,7 @@
         let mediaRecorder;
         let audioChunks = [];
         let sessionHistory = [];
+        let currentHistoryId = null;
         let audioContext, analyser, visualizerCanvas, visualizerCtx, dataArray, animationFrameId;
         let geminiApiKey = '';
 
@@ -169,9 +182,12 @@
         const recordBtn = document.getElementById('record-btn');
         const recordIcon = document.getElementById('record-icon');
         const recordText = document.getElementById('record-text');
+        const transcriptionContainer = document.getElementById('transcription-container');
         const transcriptionOutput = document.getElementById('transcription-output');
         const interimOutput = document.getElementById('interim-output');
+        const aiSummaryBlock = document.getElementById('ai-summary-block');
         const actionButtons = document.getElementById('action-buttons');
+        const saveEditsBtn = document.getElementById('save-edits-btn');
         const downloadBtn = document.getElementById('download-btn');
         const shareBtn = document.getElementById('share-btn');
         const summarizeBtn = document.getElementById('summarize-btn');
@@ -255,6 +271,8 @@
         saveSettingsBtn.addEventListener('click', saveSettings);
         historyBtn.addEventListener('click', () => historyPanel.classList.remove('-translate-x-full'));
         closeHistoryBtn.addEventListener('click', () => historyPanel.classList.add('-translate-x-full'));
+        historyList.addEventListener('click', loadFromHistory);
+        saveEditsBtn.addEventListener('click', saveEdits);
         downloadBtn.addEventListener('click', downloadTranscription);
         shareBtn.addEventListener('click', shareTranscription);
         summarizeBtn.addEventListener('click', summarizeText);
@@ -284,9 +302,14 @@
             }
             isRecording = true;
             final_transcript = '';
+            currentHistoryId = null;
             audioChunks = [];
             actionButtons.classList.add('hidden');
+            aiSummaryBlock.classList.add('hidden');
+            aiSummaryBlock.innerHTML = '';
+            
             transcriptionOutput.textContent = 'Listening...';
+            transcriptionOutput.contentEditable = 'false';
             interimOutput.textContent = '';
             
             try {
@@ -298,7 +321,8 @@
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const audioUrl = URL.createObjectURL(audioBlob);
                     if(final_transcript.trim()) {
-                        addToHistory(final_transcript, audioUrl);
+                        currentHistoryId = `history-${Date.now()}`;
+                        addToHistory(currentHistoryId, final_transcript, audioUrl);
                     }
                     stream.getTracks().forEach(track => track.stop());
                 };
@@ -331,8 +355,10 @@
             if (!hasError) {
                 if (final_transcript.trim()) {
                     actionButtons.classList.remove('hidden');
+                    transcriptionOutput.contentEditable = 'true';
                 } else {
                     transcriptionOutput.textContent = 'Could not hear anything. Please try again.';
+                    transcriptionOutput.contentEditable = 'false';
                 }
             }
             resetRecordButtonUI();
@@ -347,8 +373,9 @@
         }
 
         function downloadTranscription() {
-            if (!final_transcript.trim()) return;
-            const blob = new Blob([final_transcript], { type: 'text/plain' });
+            const textToDownload = transcriptionOutput.innerText;
+            if (!textToDownload.trim()) return;
+            const blob = new Blob([textToDownload], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -360,15 +387,16 @@
         }
 
         async function shareTranscription() {
-            if (!final_transcript.trim()) return;
+            const textToShare = transcriptionOutput.innerText;
+            if (!textToShare.trim()) return;
             if (navigator.share) {
                 try {
-                    await navigator.share({ title: 'My Transcription', text: final_transcript });
+                    await navigator.share({ title: 'My Transcription', text: textToShare });
                 } catch (error) {
                     console.error('Error sharing:', error);
                 }
             } else {
-                navigator.clipboard.writeText(final_transcript).then(() => showToast('Copied to clipboard!'));
+                navigator.clipboard.writeText(textToShare).then(() => showToast('Copied to clipboard!'));
             }
         }
 
@@ -382,7 +410,8 @@
             summarizeBtn.disabled = true;
             summarizeBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Summarizing...`;
 
-            const prompt = `Summarize the following text and extract key information as bullet points:\n\n---\n\n${final_transcript}`;
+            const textToSummarize = transcriptionOutput.innerText;
+            const prompt = `Summarize the following text and extract key information as bullet points:\n\n---\n\n${textToSummarize}`;
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
             try {
@@ -398,8 +427,10 @@
                 }
 
                 const result = await response.json();
-                const summary = result.candidates[0].content.parts[0].text;
-                transcriptionOutput.innerHTML = `<b>Original Text:</b><br>${final_transcript}<br><br><b>AI Summary:</b><br>${summary.replace(/\n/g, '<br>')}`;
+                const summaryText = result.candidates[0].content.parts[0].text;
+                
+                aiSummaryBlock.innerHTML = `<h3 class="text-lg font-semibold text-purple-400 mb-2">AI Summary</h3><p>${summaryText.replace(/\n/g, '<br>')}</p>`;
+                aiSummaryBlock.classList.remove('hidden');
 
             } catch (error) {
                 console.error("Gemini API error:", error);
@@ -418,8 +449,7 @@
         }
         
         // --- History Functions ---
-        function addToHistory(text, audioUrl) {
-            const id = `history-${Date.now()}`;
+        function addToHistory(id, text, audioUrl) {
             sessionHistory.unshift({ id, text, audioUrl });
             renderHistory();
         }
@@ -430,11 +460,46 @@
                 return;
             }
             historyList.innerHTML = sessionHistory.map(item => `
-                <div class="bg-gray-700/50 p-3 rounded-lg cursor-pointer hover:bg-gray-600/50" data-id="${item.id}">
-                    <p class="truncate text-gray-300">${item.text}</p>
+                <div class="history-item bg-gray-700/50 p-3 rounded-lg cursor-pointer hover:bg-gray-600/50" data-id="${item.id}">
+                    <p class="truncate text-gray-300 pointer-events-none">${item.text}</p>
                     <audio controls src="${item.audioUrl}" class="w-full mt-2"></audio>
                 </div>
             `).join('');
+        }
+        
+        function loadFromHistory(e) {
+            const itemElement = e.target.closest('.history-item');
+            if (!itemElement) return;
+
+            const id = itemElement.dataset.id;
+            const historyItem = sessionHistory.find(item => item.id === id);
+            if (!historyItem) return;
+            
+            currentHistoryId = id;
+            final_transcript = historyItem.text;
+            transcriptionOutput.textContent = historyItem.text;
+            transcriptionOutput.contentEditable = 'true';
+            interimOutput.textContent = '';
+            actionButtons.classList.remove('hidden');
+            aiSummaryBlock.classList.add('hidden');
+            aiSummaryBlock.innerHTML = '';
+            historyPanel.classList.add('-translate-x-full');
+        }
+        
+        function saveEdits() {
+            if (!currentHistoryId) {
+                showToast("No active recording to save.", true);
+                return;
+            }
+            const historyItemIndex = sessionHistory.findIndex(item => item.id === currentHistoryId);
+            if (historyItemIndex === -1) return;
+
+            const newText = transcriptionOutput.innerText;
+            sessionHistory[historyItemIndex].text = newText;
+            final_transcript = newText;
+            
+            renderHistory();
+            showToast("Edits saved!");
         }
 
         // --- Visualizer Functions ---
@@ -540,7 +605,7 @@
         function handleSettingsInputToggle(e) {
             if (e.target.closest('.toggle-vis-btn')) {
                 const button = e.target.closest('.toggle-vis-btn');
-                const input = button.previousElementSibling;
+                const input = button.parentElement.querySelector('input');
                 const icon = button.querySelector('i');
                 if (input.type === 'password') {
                     input.type = 'text';
