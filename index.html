@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice-to-Text Transcriber</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .pulse {
+            animation: pulse-animation 1.5s infinite;
+        }
+        @keyframes pulse-animation {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        #settings-panel {
+            transition: transform 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen overflow-hidden">
+
+    <div class="w-full max-w-2xl mx-auto p-4 md:p-6">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-200">Voice Transcriber</h1>
+            <button id="settings-btn" class="text-gray-400 hover:text-white transition-colors">
+                <i class="fas fa-cog fa-lg"></i>
+            </button>
+        </header>
+
+        <!-- Main Content -->
+        <main class="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 md:p-8 shadow-2xl border border-gray-700/50">
+            <!-- Transcription Display -->
+            <div id="transcription-container" class="mb-8 min-h-[150px] bg-gray-900/70 rounded-xl p-4 text-gray-300 whitespace-pre-wrap leading-relaxed">
+                <p id="transcription-output">Press the button below and start speaking...</p>
+                <p id="interim-output" class="text-gray-500"></p>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex flex-col items-center justify-center space-y-6">
+                <button id="record-btn" class="w-40 h-40 rounded-full flex flex-col items-center justify-center text-white font-semibold text-lg transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-4 focus:ring-opacity-50 bg-blue-600 hover:bg-blue-700 focus:ring-blue-500">
+                    <i id="record-icon" class="fas fa-microphone text-4xl mb-2"></i>
+                    <span id="record-text">Press to Speak</span>
+                </button>
+
+                <div id="action-buttons" class="hidden flex items-center space-x-4">
+                    <button id="download-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors">
+                        <i class="fas fa-download"></i>
+                        <span>Download</span>
+                    </button>
+                    <button id="share-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors">
+                        <i class="fas fa-share-alt"></i>
+                        <span>Share</span>
+                    </button>
+                </div>
+            </div>
+        </main>
+        
+        <!-- User ID Display -->
+        <div id="user-id-container" class="text-center mt-4 text-xs text-gray-500">
+            User ID: <span id="user-id-display">Initializing...</span>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="fixed top-0 right-0 h-full w-full md:w-96 bg-gray-800 shadow-2xl p-6 transform translate-x-full z-50 border-l-2 border-gray-700 overflow-y-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-2xl font-bold">Settings</h2>
+            <button id="close-settings-btn" class="text-gray-400 hover:text-white">
+                <i class="fas fa-times fa-lg"></i>
+            </button>
+        </div>
+        <div class="space-y-6">
+            <!-- Firebase Settings Section -->
+            <div id="firebase-settings-container">
+                <h3 class="text-lg font-semibold text-gray-300 border-b border-gray-600 pb-2 mb-4">Firebase Configuration</h3>
+                <!-- Fields will be dynamically inserted here -->
+            </div>
+        </div>
+        <button id="save-settings-btn" class="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+            Save Settings & Reload
+        </button>
+    </div>
+    
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg opacity-0 transition-opacity duration-300">
+        Settings Saved!
+    </div>
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+        
+        // --- App State ---
+        let db, auth;
+        let userId;
+        let isRecording = false;
+        let recognition;
+        let final_transcript = '';
+        let firebaseInitialized = false;
+
+        // --- UI Elements ---
+        const recordBtn = document.getElementById('record-btn');
+        const recordIcon = document.getElementById('record-icon');
+        const recordText = document.getElementById('record-text');
+        const transcriptionOutput = document.getElementById('transcription-output');
+        const interimOutput = document.getElementById('interim-output');
+        const actionButtons = document.getElementById('action-buttons');
+        const downloadBtn = document.getElementById('download-btn');
+        const shareBtn = document.getElementById('share-btn');
+        const settingsBtn = document.getElementById('settings-btn');
+        const closeSettingsBtn = document.getElementById('close-settings-btn');
+        const settingsPanel = document.getElementById('settings-panel');
+        const saveSettingsBtn = document.getElementById('save-settings-btn');
+        const firebaseSettingsContainer = document.getElementById('firebase-settings-container');
+        const toast = document.getElementById('toast');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // --- Default Firebase Config ---
+        const defaultFirebaseConfig = {
+            apiKey: "AIzaSyByqizodGDpcUtFey69Nqvk7q4lp69S5nE",
+            authDomain: "voicetotextapp-dmf.firebaseapp.com",
+            projectId: "voicetotextapp-dmf",
+            storageBucket: "voicetotextapp-dmf.firebasestorage.app",
+            messagingSenderId: "952012264827",
+            appId: "1:952012264827:web:6d452ed48f4bbad02199de",
+            measurementId: "G-ZH1J5XYXET"
+        };
+        const firebaseConfigKeys = Object.keys(defaultFirebaseConfig);
+
+        // --- Speech Recognition Setup ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            recognition.onstart = () => console.log('Voice recognition started.');
+            
+            recognition.onresult = (event) => {
+                let interim_transcript = '';
+                final_transcript = ''; 
+                for (let i = 0; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        final_transcript += event.results[i][0].transcript;
+                    } else {
+                        interim_transcript += event.results[i][0].transcript;
+                    }
+                }
+                transcriptionOutput.textContent = final_transcript;
+                interimOutput.textContent = interim_transcript;
+            };
+
+            recognition.onend = () => {
+                console.log('Voice recognition ended.');
+                if (!isRecording) return; // If already stopped by an error, do nothing.
+                isRecording = false;
+
+                const hasError = transcriptionOutput.querySelector('b');
+                if (!hasError) {
+                     if (final_transcript.trim()) {
+                        actionButtons.classList.remove('hidden');
+                    } else {
+                        transcriptionOutput.textContent = 'Could not hear anything. Please try again.';
+                    }
+                }
+                resetRecordButtonUI();
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                if (event.error === 'language-not-supported') {
+                    transcriptionOutput.innerHTML = `<b>Error:</b> Your browser's speech recognition does not support the default language. You may need to install a language pack for your OS.`;
+                } else if (event.error === 'not-allowed') {
+                    transcriptionOutput.innerHTML = `<b>Error:</b> Microphone access was denied. Please allow microphone access in your browser settings and reload the page.`;
+                }
+                else {
+                     transcriptionOutput.innerHTML = `<b>An error occurred:</b> ${event.error}`;
+                }
+                
+                if (isRecording) {
+                    recognition.stop();
+                }
+                isRecording = false;
+                resetRecordButtonUI();
+            };
+        } else {
+            console.error("Speech Recognition not supported in this browser.");
+            recordBtn.disabled = true;
+            recordText.textContent = "Not Supported";
+        }
+
+        // --- Event Listeners ---
+        recordBtn.addEventListener('click', toggleRecording);
+        settingsBtn.addEventListener('click', openSettings);
+        closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.add('translate-x-full'));
+        saveSettingsBtn.addEventListener('click', saveSettings);
+        downloadBtn.addEventListener('click', downloadTranscription);
+        shareBtn.addEventListener('click', shareTranscription);
+        firebaseSettingsContainer.addEventListener('click', (e) => {
+            if (e.target.closest('.toggle-vis-btn')) {
+                const button = e.target.closest('.toggle-vis-btn');
+                const input = button.previousElementSibling;
+                const icon = button.querySelector('i');
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash');
+                } else {
+                    input.type = 'password';
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye');
+                }
+            }
+        });
+
+        // --- Functions ---
+        function toggleRecording() {
+            if (!firebaseInitialized) {
+                showToast("Please configure and save Firebase settings first.", true);
+                return;
+            }
+            if (!SpeechRecognition) {
+                showToast("Speech recognition not supported in this browser.", true);
+                return;
+            }
+
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                startRecording();
+            }
+        }
+
+        function startRecording() {
+            isRecording = true;
+            final_transcript = '';
+            actionButtons.classList.add('hidden');
+            transcriptionOutput.textContent = 'Listening...';
+            interimOutput.textContent = '';
+            
+            try {
+                recognition.start();
+                recordBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'focus:ring-blue-500');
+                recordBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500', 'pulse');
+                recordIcon.classList.remove('fa-microphone');
+                recordIcon.classList.add('fa-stop');
+                recordText.textContent = 'Press to Finish';
+            } catch (e) {
+                console.error("Error starting recognition:", e);
+                transcriptionOutput.innerHTML = `<b>Error:</b> Could not start voice recognition. It might already be running.`;
+                isRecording = false;
+            }
+        }
+        
+        function resetRecordButtonUI() {
+            recordBtn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'focus:ring-blue-500');
+            recordBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500', 'pulse');
+            recordIcon.classList.add('fa-microphone');
+            recordIcon.classList.remove('fa-stop');
+            recordText.textContent = 'Press to Speak';
+        }
+
+        function downloadTranscription() {
+            if (!final_transcript.trim()) return;
+            const blob = new Blob([final_transcript], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'transcription.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        async function shareTranscription() {
+            if (!final_transcript.trim()) return;
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: 'My Transcription', text: final_transcript });
+                    console.log('Shared successfully');
+                } catch (error) {
+                    console.error('Error sharing:', error);
+                }
+            } else {
+                navigator.clipboard.writeText(final_transcript).then(() => showToast('Copied to clipboard!'));
+            }
+        }
+
+        function showToast(message, isError = false) {
+            toast.textContent = message;
+            toast.className = `fixed bottom-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg transition-opacity duration-300 ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => toast.classList.add('opacity-0'), 3000);
+        }
+
+        // --- Settings & Firebase Functions ---
+
+        function buildSettingsUI(config) {
+            firebaseSettingsContainer.innerHTML = '<h3 class="text-lg font-semibold text-gray-300 border-b border-gray-600 pb-2 mb-4">Firebase Configuration</h3>';
+            firebaseConfigKeys.forEach(key => {
+                const value = config[key] || '';
+                const field = `
+                    <div class="mb-4">
+                        <label for="firebase-${key}" class="block text-sm font-medium text-gray-400 mb-1">${key}</label>
+                        <div class="flex items-center">
+                            <input type="password" id="firebase-${key}" class="flex-grow w-full bg-gray-700 border border-gray-600 rounded-l-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" value="${value}">
+                            <button class="toggle-vis-btn bg-gray-600 hover:bg-gray-500 text-white font-bold p-2 rounded-r-lg" style="height: 42px; width: 42px;">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                firebaseSettingsContainer.innerHTML += field;
+            });
+        }
+
+        function openSettings() {
+            const config = getFirebaseConfigFromStorage();
+            buildSettingsUI(config);
+            settingsPanel.classList.remove('translate-x-full');
+        }
+
+        function saveSettings() {
+            const newConfig = {};
+            let allFieldsValid = true;
+            firebaseConfigKeys.forEach(key => {
+                const input = document.getElementById(`firebase-${key}`);
+                if (input && input.value) {
+                    newConfig[key] = input.value;
+                } else {
+                    allFieldsValid = false;
+                }
+            });
+
+            if (!allFieldsValid) {
+                showToast("All Firebase config fields are required.", true);
+                return;
+            }
+
+            localStorage.setItem('firebaseConfig', JSON.stringify(newConfig));
+            showToast("Settings Saved! Reloading...");
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        }
+
+        function getFirebaseConfigFromStorage() {
+            const storedConfig = localStorage.getItem('firebaseConfig');
+            if (storedConfig) {
+                try {
+                    return JSON.parse(storedConfig);
+                } catch (e) {
+                    console.error("Error parsing stored config, falling back to default.", e);
+                    return defaultFirebaseConfig;
+                }
+            }
+            return defaultFirebaseConfig;
+        }
+        
+        // --- Initialization ---
+        async function initialize() {
+            const firebaseConfig = getFirebaseConfigFromStorage();
+
+            if (!localStorage.getItem('firebaseConfig')) {
+                 localStorage.setItem('firebaseConfig', JSON.stringify(firebaseConfig, null, 2));
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug');
+                
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("User is signed in with UID:", userId);
+                        userIdDisplay.textContent = userId;
+                        firebaseInitialized = true;
+                    } else {
+                        console.log("User is not signed in. Attempting anonymous authentication...");
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (error) {
+                            console.error("Anonymous authentication error:", error);
+                            if (error.code === 'auth/operation-not-allowed') {
+                                transcriptionOutput.innerHTML = `<b>Authentication Failed:</b> Please enable Anonymous Authentication in your Firebase project's "Authentication" > "Sign-in method" tab.`;
+                            } else {
+                                transcriptionOutput.innerHTML = `<b>Authentication Failed:</b> ${error.message}`;
+                            }
+                            userIdDisplay.textContent = "Auth Failed";
+                            firebaseInitialized = false;
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Full Firebase initialization error:", error);
+                transcriptionOutput.innerHTML = `Error initializing Firebase. Please check your configuration in <i class="fas fa-cog"></i> settings. The error was: <span class="text-red-400">${error.message}</span>`;
+                userIdDisplay.textContent = "Init Error";
+                firebaseInitialized = false;
+            }
+        }
+
+        // --- Start the app ---
+        window.onload = initialize;
+
+    </script>
+</body>
+</html>
