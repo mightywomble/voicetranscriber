@@ -188,6 +188,7 @@
         let currentHistoryId = null;
         let audioContext, analyser, visualizerCanvas, visualizerCtx, dataArray, animationFrameId;
         let geminiApiKey = '';
+        let lastError = null;
 
         // --- UI Elements ---
         const recordBtn = document.getElementById('record-btn');
@@ -237,7 +238,10 @@
             recognition.continuous = true;
             recognition.interimResults = true;
 
-            recognition.onstart = () => console.log('Voice recognition started.');
+            recognition.onstart = () => {
+                console.log('DEBUG: Voice recognition service has started.');
+                lastError = null; // Reset last error on start
+            };
             
             recognition.onresult = (event) => {
                 let interim_transcript = '';
@@ -255,20 +259,14 @@
             };
 
             recognition.onend = () => {
-                console.log('Voice recognition ended.');
+                console.log('DEBUG: Voice recognition service has ended.');
                 finalizeRecording();
             };
 
             recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                if (event.error === 'language-not-supported') {
-                    transcriptionOutput.innerHTML = `<b>Error:</b> Your browser's speech recognition does not support the default language.`;
-                } else if (event.error === 'not-allowed') {
-                    transcriptionOutput.innerHTML = `<b>Error:</b> Microphone access was denied. Please allow microphone access in your browser settings and reload the page.`;
-                } else {
-                     transcriptionOutput.innerHTML = `<b>An error occurred:</b> ${event.error}`;
-                }
-                finalizeRecording(true);
+                console.error('DEBUG: Speech recognition error:', event.error, event.message);
+                lastError = event.error; // Store the specific error
+                // The finalizeRecording function will handle displaying the error.
             };
         } else {
             console.error("Speech Recognition not supported in this browser.");
@@ -356,7 +354,7 @@
             }
         }
 
-        function finalizeRecording(hasError = false) {
+        function finalizeRecording() {
             if (!isRecording) return;
             isRecording = false;
 
@@ -365,15 +363,27 @@
             }
             stopVisualizer();
             
-            if (!hasError) {
-                if (final_transcript.trim()) {
-                    actionButtons.classList.remove('hidden');
-                    transcriptionOutput.contentEditable = 'true';
+            if (lastError) {
+                // An error occurred, display the specific error message.
+                 if (lastError === 'no-speech') {
+                    transcriptionOutput.innerHTML = `<b>No speech was detected.</b> Please try speaking again.`;
+                } else if (lastError === 'language-not-supported') {
+                    transcriptionOutput.innerHTML = `<b>Error:</b> Your browser's speech recognition does not support the default language.`;
+                } else if (lastError === 'not-allowed' || lastError === 'aborted') {
+                    transcriptionOutput.innerHTML = `<b>Error:</b> Microphone access was denied or aborted. Please check browser permissions.`;
                 } else {
-                    transcriptionOutput.textContent = 'Could not hear anything. Please try again.';
-                    transcriptionOutput.contentEditable = 'false';
+                     transcriptionOutput.innerHTML = `<b>An error occurred:</b> ${lastError}. Please try again.`;
                 }
+            } else if (final_transcript.trim()) {
+                // Success, show buttons
+                actionButtons.classList.remove('hidden');
+                transcriptionOutput.contentEditable = 'true';
+            } else {
+                // No error, but no transcript. This is the silent failure case.
+                transcriptionOutput.innerHTML = '<b>Could not hear anything.</b> On mobile, please ensure a stable network connection and try again.';
+                transcriptionOutput.contentEditable = 'false';
             }
+
             resetRecordButtonUI();
         }
         
