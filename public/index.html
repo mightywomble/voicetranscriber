@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice-to-Text Transcriber</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background-color: #374151; /* Fallback */
+            background-image: linear-gradient(to bottom, #6b7280, #4b5563, #374151, #4b5563, #6b7280);
+        }
+        .main-panel-bg {
+             background-color: #374151;
+             background-image: linear-gradient(to bottom, #4b5563, #374151);
+        }
+        .pulse {
+            animation: pulse-animation 1.5s infinite;
+        }
+        @keyframes pulse-animation {
+            0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+            70% { box-shadow: 0 0 0 25px rgba(220, 38, 38, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+        }
+        .panel {
+            transition: transform 0.3s ease-in-out;
+            scrollbar-width: thin;
+            scrollbar-color: #6b7280 #374151;
+        }
+        .panel::-webkit-scrollbar {
+            width: 8px;
+        }
+        .panel::-webkit-scrollbar-track {
+            background: #374151;
+        }
+        .panel::-webkit-scrollbar-thumb {
+            background-color: #6b7280;
+            border-radius: 10px;
+            border: 2px solid #374151;
+        }
+        [contenteditable="true"]:focus {
+            outline: 2px solid #6366f1;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+        }
+    </style>
+</head>
+<body class="text-gray-200 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-3xl mx-auto">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-6 px-2">
+            <div class="flex items-center space-x-3">
+                <svg class="w-10 h-10 text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2C6.477 2 2 6.477 2 12C2 17.523 6.477 22 12 22C17.523 22 22 17.523 22 12C22 6.477 17.523 2 12 2ZM10 16.5V7.5L16 12L10 16.5Z" fill="currentColor" opacity="0.3"/>
+                    <path d="M7 9C7 7.89543 7.89543 7 9 7H10C10.5523 7 11 7.44772 11 8V16C11 16.5523 10.5523 17 10 17H9C7.89543 17 7 16.1046 7 15V9Z" fill="currentColor"/>
+                    <path d="M13 8C13 7.44772 13.4477 7 14 7H15C16.1046 7 17 7.89543 17 9V15C17 16.1046 16.1046 17 15 17H14C13.4477 17 13 16.5523 13 16V8Z" fill="currentColor"/>
+                </svg>
+                <h1 class="text-xl sm:text-2xl font-bold text-white drop-shadow-md">AI Voice Transcriber</h1>
+            </div>
+            <div>
+                <button id="new-session-btn" class="text-gray-300 hover:text-white transition-colors py-2 px-3 rounded-full hover:bg-gray-600/50 flex items-center space-x-2 mr-2">
+                    <i class="fas fa-plus"></i>
+                    <span>New</span>
+                </button>
+                <button id="history-btn" class="text-gray-300 hover:text-white transition-colors p-2 rounded-full hover:bg-gray-600/50">
+                    <i class="fas fa-history fa-lg"></i>
+                </button>
+                <button id="settings-btn" class="text-gray-300 hover:text-white transition-colors p-2 rounded-full hover:bg-gray-600/50">
+                    <i class="fas fa-cog fa-lg"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-panel-bg backdrop-blur-sm rounded-2xl p-6 sm:p-8 shadow-2xl border border-gray-600/50">
+            <!-- Transcription Display -->
+            <div id="transcription-container" class="mb-6 bg-gray-800/50 rounded-xl p-4 text-gray-100 leading-relaxed overflow-y-auto max-h-[40vh] shadow-inner">
+                <div id="transcription-output" class="min-h-[150px] whitespace-pre-wrap rounded-lg text-white" contenteditable="false" spellcheck="true">Press the button below and start speaking...</div>
+                <p id="interim-output" class="text-gray-400"></p>
+                <div id="ai-summary-block" class="hidden mt-4 pt-4 border-t border-gray-600"></div>
+            </div>
+            
+            <!-- Visualizer -->
+            <div id="visualizer-container" class="hidden mb-6">
+                <canvas id="visualizer" class="w-full h-20 rounded-lg bg-gray-800/30"></canvas>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex flex-col items-center justify-center space-y-6">
+                <button id="record-btn" class="w-40 h-40 md:w-48 md:h-48 rounded-full flex flex-col items-center justify-center text-white font-semibold text-lg transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-4 focus:ring-opacity-50 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:ring-gray-500 border-2 border-gray-600">
+                    <i id="record-icon" class="fas fa-microphone text-4xl mb-2"></i>
+                    <span id="record-text">Press to Speak</span>
+                </button>
+
+                <div id="action-buttons" class="hidden flex flex-wrap items-center justify-center gap-4">
+                     <button id="save-edits-btn" class="bg-gradient-to-br from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors border border-gray-500 shadow-md">
+                        <i class="fas fa-save"></i>
+                        <span>Save Edits</span>
+                    </button>
+                    <button id="summarize-btn" class="bg-gradient-to-br from-indigo-600 to-purple-700 hover:from-indigo-500 hover:to-purple-600 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors border border-indigo-500 shadow-md">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                        <span>Summarize with AI</span>
+                    </button>
+                    <button id="download-btn" class="bg-gradient-to-br from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors border border-gray-500 shadow-md">
+                        <i class="fas fa-download"></i>
+                        <span>Download</span>
+                    </button>
+                    <button id="share-btn" class="bg-gradient-to-br from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white font-bold py-2 px-4 rounded-lg flex items-center space-x-2 transition-colors border border-gray-500 shadow-md">
+                        <i class="fas fa-share-alt"></i>
+                        <span>Share</span>
+                    </button>
+                </div>
+            </div>
+        </main>
+        
+        <!-- User ID Display -->
+        <div id="user-id-container" class="text-center mt-6 text-xs text-gray-400 drop-shadow">
+            User ID: <span id="user-id-display">Initializing...</span>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="panel fixed top-0 right-0 h-full w-full sm:w-96 bg-gray-800 shadow-2xl p-6 transform translate-x-full z-50 border-l-2 border-gray-700 overflow-y-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-2xl font-bold">Settings</h2>
+            <button id="close-settings-btn" class="text-gray-400 hover:text-white">
+                <i class="fas fa-times fa-lg"></i>
+            </button>
+        </div>
+        <div class="space-y-6">
+            <div>
+                <label for="gemini-api-key" class="block text-sm font-medium text-gray-300 mb-1">Gemini API Key</label>
+                 <div class="flex items-center">
+                    <input type="password" id="gemini-api-key" class="flex-grow w-full bg-gray-700 border border-gray-600 rounded-l-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Enter your Gemini API key">
+                    <button class="toggle-vis-btn bg-gray-600 hover:bg-gray-500 text-white font-bold p-2 rounded-r-lg" style="height: 42px; width: 42px;">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="firebase-settings-container">
+                <h3 class="text-lg font-semibold text-gray-300 border-b border-gray-600 pb-2 mb-4">Firebase Configuration</h3>
+            </div>
+        </div>
+        <button id="save-settings-btn" class="mt-8 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-colors">
+            Save Settings & Reload
+        </button>
+    </div>
+    
+    <!-- History Panel -->
+    <div id="history-panel" class="panel fixed top-0 left-0 h-full w-full sm:w-96 bg-gray-800 shadow-2xl p-6 transform -translate-x-full z-50 border-r-2 border-gray-700 overflow-y-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-2xl font-bold">Session History</h2>
+            <button id="close-history-btn" class="text-gray-400 hover:text-white">
+                <i class="fas fa-times fa-lg"></i>
+            </button>
+        </div>
+        <div id="history-list" class="space-y-4">
+            <p class="text-gray-400">No recordings in this session yet.</p>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg opacity-0 transition-opacity duration-300">
+        Settings Saved!
+    </div>
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+        
+        // --- App State ---
+        let db, auth;
+        let userId;
+        let isRecording = false;
+        let recognition;
+        let final_transcript = '';
+        let firebaseInitialized = false;
+        let mediaRecorder;
+        let audioChunks = [];
+        let sessionHistory = [];
+        let currentHistoryId = null;
+        let audioContext, analyser, visualizerCanvas, visualizerCtx, dataArray, animationFrameId;
+        let geminiApiKey = '';
+        let lastError = null;
+
+        // --- UI Elements ---
+        const recordBtn = document.getElementById('record-btn');
+        const recordIcon = document.getElementById('record-icon');
+        const recordText = document.getElementById('record-text');
+        const transcriptionContainer = document.getElementById('transcription-container');
+        const transcriptionOutput = document.getElementById('transcription-output');
+        const interimOutput = document.getElementById('interim-output');
+        const aiSummaryBlock = document.getElementById('ai-summary-block');
+        const actionButtons = document.getElementById('action-buttons');
+        const saveEditsBtn = document.getElementById('save-edits-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const shareBtn = document.getElementById('share-btn');
+        const summarizeBtn = document.getElementById('summarize-btn');
+        const settingsBtn = document.getElementById('settings-btn');
+        const closeSettingsBtn = document.getElementById('close-settings-btn');
+        const settingsPanel = document.getElementById('settings-panel');
+        const saveSettingsBtn = document.getElementById('save-settings-btn');
+        const firebaseSettingsContainer = document.getElementById('firebase-settings-container');
+        const geminiApiKeyInput = document.getElementById('gemini-api-key');
+        const historyBtn = document.getElementById('history-btn');
+        const newSessionBtn = document.getElementById('new-session-btn');
+        const closeHistoryBtn = document.getElementById('close-history-btn');
+        const historyPanel = document.getElementById('history-panel');
+        const historyList = document.getElementById('history-list');
+        const toast = document.getElementById('toast');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const visualizerContainer = document.getElementById('visualizer-container');
+        visualizerCanvas = document.getElementById('visualizer');
+
+        // --- Default Firebase Config ---
+        const defaultFirebaseConfig = {
+            apiKey: "AIzaSyByqizodGDpcUtFey69Nqvk7q4lp69S5nE",
+            authDomain: "voicetotextapp-dmf.firebaseapp.com",
+            projectId: "voicetotextapp-dmf",
+            storageBucket: "voicetotextapp-dmf.firebasestorage.app",
+            messagingSenderId: "952012264827",
+            appId: "1:952012264827:web:6d452ed48f4bbad02199de",
+            measurementId: "G-ZH1J5XYXET"
+        };
+        const firebaseConfigKeys = Object.keys(defaultFirebaseConfig);
+
+        // --- Speech Recognition Setup ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            recognition.onstart = () => {
+                console.log('DEBUG: Voice recognition service has started.');
+                lastError = null; // Reset last error on start
+            };
+            
+            recognition.onresult = (event) => {
+                let interim_transcript = '';
+                let current_final = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        current_final += event.results[i][0].transcript;
+                    } else {
+                        interim_transcript += event.results[i][0].transcript;
+                    }
+                }
+                final_transcript += current_final;
+                transcriptionOutput.textContent = final_transcript;
+                interimOutput.textContent = interim_transcript;
+            };
+
+            recognition.onend = () => {
+                console.log('DEBUG: Voice recognition service has ended.');
+                finalizeRecording();
+            };
+
+            recognition.onerror = (event) => {
+                console.error('DEBUG: Speech recognition error:', event.error, event.message);
+                lastError = event.error; // Store the specific error
+                // The finalizeRecording function will handle displaying the error.
+            };
+        } else {
+            console.error("Speech Recognition not supported in this browser.");
+            recordBtn.disabled = true;
+            recordText.textContent = "Not Supported";
+        }
+
+        // --- Event Listeners ---
+        recordBtn.addEventListener('click', toggleRecording);
+        settingsBtn.addEventListener('click', openSettings);
+        closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.add('translate-x-full'));
+        saveSettingsBtn.addEventListener('click', saveSettings);
+        historyBtn.addEventListener('click', () => historyPanel.classList.remove('-translate-x-full'));
+        closeHistoryBtn.addEventListener('click', () => historyPanel.classList.add('-translate-x-full'));
+        newSessionBtn.addEventListener('click', () => window.location.reload());
+        historyList.addEventListener('click', loadFromHistory);
+        saveEditsBtn.addEventListener('click', saveEdits);
+        downloadBtn.addEventListener('click', downloadTranscription);
+        shareBtn.addEventListener('click', shareTranscription);
+        summarizeBtn.addEventListener('click', summarizeText);
+        settingsPanel.addEventListener('click', handleSettingsInputToggle);
+
+        // --- Functions ---
+        async function toggleRecording() {
+            if (!firebaseInitialized) {
+                showToast("Please configure and save Firebase settings first.", true);
+                return;
+            }
+            if (!SpeechRecognition) {
+                showToast("Speech recognition not supported in this browser.", true);
+                return;
+            }
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                await startRecording();
+            }
+        }
+
+        async function startRecording() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                transcriptionOutput.innerHTML = `<b>Error:</b> Your browser does not support microphone access.`;
+                return;
+            }
+            isRecording = true;
+            final_transcript = '';
+            currentHistoryId = null;
+            audioChunks = [];
+            actionButtons.classList.add('hidden');
+            aiSummaryBlock.classList.add('hidden');
+            aiSummaryBlock.innerHTML = '';
+            
+            transcriptionOutput.textContent = 'Listening...';
+            transcriptionOutput.contentEditable = 'false';
+            interimOutput.textContent = '';
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                setupVisualizer(stream);
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    if(final_transcript.trim()) {
+                        currentHistoryId = `history-${Date.now()}`;
+                        addToHistory(currentHistoryId, final_transcript, audioUrl);
+                    }
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
+                recognition.start();
+                
+                recordBtn.classList.replace('bg-gradient-to-br', 'bg-red-700');
+                recordBtn.classList.replace('from-gray-700', 'hover:bg-red-600');
+                recordBtn.classList.add('pulse');
+                recordIcon.classList.replace('fa-microphone', 'fa-stop');
+                recordText.textContent = 'Press to Finish';
+
+            } catch (e) {
+                console.error("Error starting recognition:", e);
+                transcriptionOutput.innerHTML = `<b>Error:</b> Could not start voice recognition. Please ensure microphone permissions are granted.`;
+                isRecording = false;
+            }
+        }
+
+        function finalizeRecording() {
+            if (!isRecording) return;
+            isRecording = false;
+
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+            }
+            stopVisualizer();
+            
+            if (lastError) {
+                // An error occurred, display the specific error message.
+                 if (lastError === 'no-speech') {
+                    transcriptionOutput.innerHTML = `<b>No speech was detected.</b> Please try speaking again.`;
+                } else if (lastError === 'language-not-supported') {
+                    transcriptionOutput.innerHTML = `<b>Error:</b> Your browser's speech recognition does not support the default language.`;
+                } else if (lastError === 'not-allowed' || lastError === 'aborted') {
+                    transcriptionOutput.innerHTML = `<b>Error:</b> Microphone access was denied or aborted. Please check browser permissions.`;
+                } else {
+                     transcriptionOutput.innerHTML = `<b>An error occurred:</b> ${lastError}. Please try again.`;
+                }
+            } else if (final_transcript.trim()) {
+                // Success, show buttons
+                actionButtons.classList.remove('hidden');
+                transcriptionOutput.contentEditable = 'true';
+            } else {
+                // No error, but no transcript. This is the silent failure case.
+                transcriptionOutput.innerHTML = '<b>Could not hear anything.</b> On mobile, please ensure a stable network connection and try again.';
+                transcriptionOutput.contentEditable = 'false';
+            }
+
+            resetRecordButtonUI();
+        }
+        
+        function resetRecordButtonUI() {
+            recordBtn.classList.replace('bg-red-700', 'bg-gradient-to-br');
+            recordBtn.classList.replace('hover:bg-red-600', 'from-gray-700');
+            recordBtn.classList.remove('pulse');
+            recordIcon.classList.replace('fa-stop', 'fa-microphone');
+            recordText.textContent = 'Press to Speak';
+        }
+
+        function downloadTranscription() {
+            const textToDownload = transcriptionOutput.innerText;
+            if (!textToDownload.trim()) return;
+            const blob = new Blob([textToDownload], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'transcription.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        async function shareTranscription() {
+            const textToShare = transcriptionOutput.innerText;
+            if (!textToShare.trim()) return;
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: 'My Transcription', text: textToShare });
+                } catch (error) {
+                    console.error('Error sharing:', error);
+                }
+            } else {
+                navigator.clipboard.writeText(textToShare).then(() => showToast('Copied to clipboard!'));
+            }
+        }
+
+        async function summarizeText() {
+            const apiKey = geminiApiKey;
+            if (!apiKey) {
+                showToast("Please enter your Gemini API key in settings.", true);
+                return;
+            }
+            
+            summarizeBtn.disabled = true;
+            summarizeBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Summarizing...`;
+
+            const textToSummarize = transcriptionOutput.innerText;
+            const prompt = `Summarize the following text and extract key information as bullet points:\n\n---\n\n${textToSummarize}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error.message || `API request failed with status ${response.status}`);
+                }
+
+                const result = await response.json();
+                const summaryText = result.candidates[0].content.parts[0].text;
+                
+                aiSummaryBlock.innerHTML = `<h3 class="text-lg font-semibold text-indigo-400 mb-2">AI Summary</h3><p>${summaryText.replace(/\n/g, '<br>')}</p>`;
+                aiSummaryBlock.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Gemini API error:", error);
+                showToast(`AI Summary Failed: ${error.message}`, true);
+            } finally {
+                summarizeBtn.disabled = false;
+                summarizeBtn.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i> Summarize with AI`;
+            }
+        }
+
+        function showToast(message, isError = false) {
+            toast.textContent = message;
+            toast.className = `fixed bottom-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg transition-opacity duration-300 ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => toast.classList.add('opacity-0'), 3000);
+        }
+        
+        // --- History Functions ---
+        function addToHistory(id, text, audioUrl) {
+            sessionHistory.unshift({ id, text, audioUrl });
+            renderHistory();
+        }
+
+        function renderHistory() {
+            if (sessionHistory.length === 0) {
+                historyList.innerHTML = `<p class="text-gray-400">No recordings in this session yet.</p>`;
+                return;
+            }
+            historyList.innerHTML = sessionHistory.map(item => `
+                <div class="history-item bg-gray-600/50 p-3 rounded-lg cursor-pointer hover:bg-gray-500/50" data-id="${item.id}">
+                    <p class="truncate text-gray-300 pointer-events-none">${item.text}</p>
+                    <audio controls src="${item.audioUrl}" class="w-full mt-2"></audio>
+                </div>
+            `).join('');
+        }
+        
+        function loadFromHistory(e) {
+            const itemElement = e.target.closest('.history-item');
+            if (!itemElement) return;
+
+            const id = itemElement.dataset.id;
+            const historyItem = sessionHistory.find(item => item.id === id);
+            if (!historyItem) return;
+            
+            currentHistoryId = id;
+            final_transcript = historyItem.text;
+            transcriptionOutput.textContent = historyItem.text;
+            transcriptionOutput.contentEditable = 'true';
+            interimOutput.textContent = '';
+            actionButtons.classList.remove('hidden');
+            aiSummaryBlock.classList.add('hidden');
+            aiSummaryBlock.innerHTML = '';
+            historyPanel.classList.add('-translate-x-full');
+        }
+        
+        function saveEdits() {
+            if (!currentHistoryId) {
+                showToast("No active recording to save.", true);
+                return;
+            }
+            const historyItemIndex = sessionHistory.findIndex(item => item.id === currentHistoryId);
+            if (historyItemIndex === -1) return;
+
+            const newText = transcriptionOutput.innerText;
+            sessionHistory[historyItemIndex].text = newText;
+            final_transcript = newText;
+            
+            renderHistory();
+            showToast("Edits saved!");
+        }
+
+        // --- Visualizer Functions ---
+        function setupVisualizer(stream) {
+            visualizerContainer.classList.remove('hidden');
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+            analyser.fftSize = 256;
+            const bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            visualizerCtx = visualizerCanvas.getContext('2d');
+            drawVisualizer();
+        }
+
+        function drawVisualizer() {
+            animationFrameId = requestAnimationFrame(drawVisualizer);
+            analyser.getByteFrequencyData(dataArray);
+            visualizerCtx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+            const barWidth = (visualizerCanvas.width / dataArray.length) * 2.5;
+            let x = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                const barHeight = dataArray[i] / 2;
+                visualizerCtx.fillStyle = `rgba(209, 213, 219, ${barHeight / 150})`;
+                visualizerCtx.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+                x += barWidth + 1;
+            }
+        }
+
+        function stopVisualizer() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            if (visualizerCtx) visualizerCtx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+            visualizerContainer.classList.add('hidden');
+            if(audioContext && audioContext.state !== 'closed') audioContext.close();
+        }
+
+        // --- Settings & Firebase Functions ---
+        function buildSettingsUI(config) {
+            firebaseSettingsContainer.innerHTML = '<h3 class="text-lg font-semibold text-gray-300 border-b border-gray-600 pb-2 mb-4">Firebase Configuration</h3>';
+            firebaseConfigKeys.forEach(key => {
+                const value = config[key] || '';
+                const field = `
+                    <div class="mb-4">
+                        <label for="firebase-${key}" class="block text-sm font-medium text-gray-300 mb-1">${key}</label>
+                        <div class="flex items-center">
+                            <input type="password" id="firebase-${key}" class="flex-grow w-full bg-gray-600 border border-gray-500 rounded-l-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" value="${value}">
+                            <button class="toggle-vis-btn bg-gray-500 hover:bg-gray-400 text-white font-bold p-2 rounded-r-lg" style="height: 42px; width: 42px;">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                firebaseSettingsContainer.innerHTML += field;
+            });
+        }
+
+        function openSettings() {
+            const config = getFirebaseConfigFromStorage();
+            buildSettingsUI(config);
+            geminiApiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
+            settingsPanel.classList.remove('translate-x-full');
+        }
+
+        function saveSettings() {
+            const newConfig = {};
+            let allFieldsValid = true;
+            firebaseConfigKeys.forEach(key => {
+                const input = document.getElementById(`firebase-${key}`);
+                if (input && input.value) {
+                    newConfig[key] = input.value;
+                } else {
+                    allFieldsValid = false;
+                }
+            });
+
+            if (!allFieldsValid) {
+                showToast("All Firebase config fields are required.", true);
+                return;
+            }
+            
+            const newGeminiKey = geminiApiKeyInput.value;
+            localStorage.setItem('firebaseConfig', JSON.stringify(newConfig));
+            localStorage.setItem('geminiApiKey', newGeminiKey);
+            geminiApiKey = newGeminiKey;
+
+            showToast("Settings Saved! Reloading...");
+            setTimeout(() => window.location.reload(), 1500);
+        }
+
+        function getFirebaseConfigFromStorage() {
+            const storedConfig = localStorage.getItem('firebaseConfig');
+            if (storedConfig) {
+                try {
+                    return JSON.parse(storedConfig);
+                } catch (e) {
+                    return defaultFirebaseConfig;
+                }
+            }
+            return defaultFirebaseConfig;
+        }
+        
+        function handleSettingsInputToggle(e) {
+            if (e.target.closest('.toggle-vis-btn')) {
+                const button = e.target.closest('.toggle-vis-btn');
+                const input = button.parentElement.querySelector('input');
+                const icon = button.querySelector('i');
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.classList.replace('fa-eye', 'fa-eye-slash');
+                } else {
+                    input.type = 'password';
+                    icon.classList.replace('fa-eye-slash', 'fa-eye');
+                }
+            }
+        }
+        
+        // --- Initialization ---
+        async function initialize() {
+            geminiApiKey = localStorage.getItem('geminiApiKey') || '';
+            const firebaseConfig = getFirebaseConfigFromStorage();
+            if (!localStorage.getItem('firebaseConfig')) {
+                 localStorage.setItem('firebaseConfig', JSON.stringify(firebaseConfig, null, 2));
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug');
+                
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = userId;
+                        firebaseInitialized = true;
+                    } else {
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (error) {
+                            console.error("Anonymous authentication error:", error);
+                            if (error.code === 'auth/operation-not-allowed') {
+                                transcriptionOutput.innerHTML = `<b>Authentication Failed:</b> Please enable Anonymous Authentication in your Firebase project's "Authentication" > "Sign-in method" tab.`;
+                            } else {
+                                transcriptionOutput.innerHTML = `<b>Authentication Failed:</b> ${error.message}`;
+                            }
+                            userIdDisplay.textContent = "Auth Failed";
+                            firebaseInitialized = false;
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Full Firebase initialization error:", error);
+                transcriptionOutput.innerHTML = `Error initializing Firebase. Check your configuration in <i class="fas fa-cog"></i> settings. The error was: <span class="text-red-400">${error.message}</span>`;
+                userIdDisplay.textContent = "Init Error";
+                firebaseInitialized = false;
+            }
+        }
+
+        // --- Start the app ---
+        window.onload = initialize;
+
+    </script>
+</body>
+</html>
